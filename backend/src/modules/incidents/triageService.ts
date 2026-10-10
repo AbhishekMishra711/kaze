@@ -88,9 +88,9 @@ export class TriageService {
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 200,
+          max_tokens: 400,
           temperature: 0.1,
-          system: 'Emergency clinical triage. Output ONLY raw JSON matching: {"triageLevel":"RESUSCITATION"|"EMERGENT"|"URGENT"|"LESS_URGENT"|"NON_URGENT","requirements":[{"category":"ICU_BED"|"VENTILATOR"|"TRAUMA_BAY"|"OXYGEN_BED"|"PEDIATRIC_ICU"|"GENERAL_BED","quantity":1,"justification":"string"}]}',
+          system: 'Emergency clinical triage. Output ONLY raw JSON. Keep each justification strictly under 8 words. Schema: {"triageLevel":"RESUSCITATION"|"EMERGENT"|"URGENT"|"LESS_URGENT"|"NON_URGENT","requirements":[{"category":"ICU_BED"|"VENTILATOR"|"TRAUMA_BAY"|"OXYGEN_BED"|"PEDIATRIC_ICU"|"GENERAL_BED","quantity":1,"justification":"brief reason"}]}',
           messages: [
             { role: 'user', content: cleanDesc }
           ]
@@ -110,8 +110,14 @@ export class TriageService {
         return this.parseDeterministic(cleanDesc);
       }
 
-      // Parse JSON from response
-      const cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
+      // Extract JSON substring cleanly
+      let cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim();
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+      }
+
       const parsed = JSON.parse(cleaned);
 
       const result: TriageResult = {
