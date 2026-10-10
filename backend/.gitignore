@@ -1,0 +1,13 @@
+# Environment Secrets
+.env
+*.env
+
+# Dependencies
+node_modules/
+
+# Local DB & Cache
+.pgdata/
+
+# Build
+dist/
+*.log

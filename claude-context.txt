@@ -1,0 +1,391 @@
+
+Project ko alag services mein todne ka tarika soch rahe hain.
+Project ko alag services mein todne ka tarika soch rahe hain.
+Short answer: ek hi backend (modular monolith), alag-alag frontends
+Hackathon jeetne ke liye microservices mat banao. Ek FastAPI backend banao jisme andar clean modules hon, aur uske upar role-wise alag frontend screens.
+
+Microservices kyun nahi?
+Double-booking ka problem: PS ka sabse bada test hai “exactly one reservation wins”. Ye ek database transaction ya unique constraint se hota hai. Agar reservation, allocator aur hospital state alag services me hongi, to distributed transactions, sagas aur network failures ka jhanjhat aa jayega. 24 ghante me ye risk bekaar hai.
+Time: Har service ka alag Docker, deployment, auth aur debugging lagta hai. Wo time forecaster aur baseline comparison me lagao, kyunki judges wahi dekhte hain.
+Replay engine: Tumhe same scenario system aur baseline dono par deterministic chalana hai. Ek process me ye aasan hai, 5 services me mushkil.
+Demo risk: Live demo me ek service down ho gayi to poora flow ruk jayega.
+Kya karna hai: ek backend, andar alag modules
+backend/
+  app/
+    api/
+      dispatcher.py      # batch submit, assignments, unserved
+      hospital.py        # accept/reject, occupancy update, closure
+      admin.py           # replay, metrics, baseline compare
+    core/
+      reservation.py     # state machine + locking + idempotency
+      allocator.py       # batch optimizer + hard constraints
+      replanner.py       # rejection / resource loss / travel change
+      freshness.py       # stale data rules
+    ml/
+      forecaster.py      # P(available at ETA)
+      train.py, evaluate.py
+    sim/
+      generator.py       # synthetic occupancy (seeded)
+      replay.py          # deterministic scenarios
+      baseline.py        # current-capacity-only allocator
+    db/                  # models, migrations
+frontend/
+  dispatcher/            # allocation console
+  hospital/              # confirmation panel
+  admin/                 # replay + metrics
+Har module ka ek clear interface rakho, jaise allocator.solve(patients, state). Isse code services jaisa clean rehta hai, par deploy ek hi hota hai.
+
+Frontend kaise alag karo
+Ek hi React/Streamlit app me role-based routes: /dispatcher, /hospital, /admin.
+Login par role milta hai, aur backend har endpoint par role check karta hai. Sirf UI button chhupana kaafi nahi hai, judges ye check karte hain.
+Real-time updates ke liye WebSocket ya simple polling (har 2-3 sec) use karo, taaki hospital ka accept/reject dispatcher ko turant dikhe.
+“Ambulance admin” ko alag app mat banao. Dispatcher console hi uska kaam kar deti hai. Chaho to ek chhota optional driver/ambulance view (ETA update, arrived button) add kar do, ye demo me achha lagta hai.
+Judges ko architecture kaise dikhao
+Ek diagram banao: “Modular monolith, single transactional database, 3 role-based frontends, API-first”. Aur ek line bolo:
+
+“Humne jaanbujhkar monolith choose kiya kyunki reservation ki atomicity sabse critical requirement hai. Modules clean boundaries ke saath hain, to zarurat padne par services me split kiya ja sakta hai.”
+
+Ye line judges ko impress karti hai, kyunki isme engineering ka reason dikhta hai.
+
+Ek optional trick
+Agar “services” wala feel dena hai, to ML forecaster ko alag chhoti service bana sakte ho (/predict endpoint, alag process). Ye safe hai kyunki ye stateless hai aur isme locking nahi chahiye. Par agar time kam hai, to isse bhi main backend ke andar rakho.
+
+Summary
+Option	Hackathon ke liye
+Ek backend, modules, role-based frontends	Best
+Ek backend + alag ML service	Theek hai, optional
+Poore microservices	Avoid karo, risk zyada, fayda kam
+Agar chaho to main ab database schema (reservation table ka unique constraint ke saath) ya API endpoints ki list bana deta hoon, taaki frontend aur backend wale teammates parallel kaam kar sakein.
+
+mai soch rha hu ki 
+express me backend banau, and mera friend next.js me frontend 
+
+so iske hisab se batao , kaise mai excalty backend banau,
+
+since mera task backend banana ha complete project ka mere 
+so mujeh completty banana hai ,and also jo bhi data baes honge tec vo sab,
+
+so listen mai tumhe ek basic wiframe batata hu project ka flow ajisa exaclty kya h9ga 
+
+user ke pass ek app hoga ,jiske under usse ek sos button dikhega , so when they click on this button sos button pe click karega , so when page usse redicted karke describe wale page pe jayeag usse , usme na usse descibe karna hai exackty kya ind=cident hua ha,
+modes , text/speech , if any photo,video etc , any note if any ,
+
+so what happen is , this requirests are send to the amulance admin pannel , so there an new requuiest has been raised , so that happens is , the admin got all the requiests and description of that user , so there will be an llm model we are using so that it does it , it genertes a exptedted/predictetd machines/resources list 
+example,ventilaotr,oxygen tank ,icu etc 
+so this list is gereted and shown to the admin , and there he/she can also see the note if any added buy the user , and also the admin can modify the resoucces list if admin wants ,
+so after approcivnb the list , admin dashboard so then we set a fixed radius limit from that pateint , so our alogirthm runs and find out the hospital present in that raidus, if no hospital found then , radius is increased, if we found any , then we check for the availibilty , if its available then we find the ambulance near the user , and then the ambulace is dispatted and contanct details(which we took during when he installed our app and signed up for the first time  but its not compulsory user can skip ) of the user,location,rsoucelist,etc , then the ambulace reach there and took that person to the hospital, if the the availiblity is not there then we increae that radius , and search 
+, if we couled  not able to find any hospital with suffient availibility then we rank that resouce improtance and if in the bottom then we can try if its mova bale reosuce so we can conatct other hospital to share that reosuce , so , we can dispatec that ambulace,
+btw when a reouce is found it is locked for that user for cerrtain time until he.she cancel that emergceny or until he reach thete and confirm , and we then update accordingly , so we coukd avoid double booking , if two peron raises same rewuuest so we put thme into a waiting quues and then sort them based on emergnecy , criticlaity and then disoacted accordingn.
+
+so mera part backend ka hia so what do you think kaise kya krna hia muhe ?, i mean oyu got it
+
+Database schema aur queue allocation logic design ki ja rahi hai.
+Haan, flow samajh aa gaya. Ye raha tumhara backend ka poora plan
+Tumhara wireframe achha hai, bas 2 jagah PS ke hisaab se gap hai, jo main end me bataunga. Pehle backend.
+
+1. Stack decision (Express ke saath)
+Cheez	Choice	Kyun
+Server	Express + TypeScript	Friend ke Next.js ke saath types share ho sakte hain
+Database	PostgreSQL + PostGIS (MongoDB nahi)	Double-booking rokne ke liye transaction, row lock aur unique constraint chahiye. Radius search bhi PostGIS se hota hai
+ORM	Prisma (ya Drizzle), locking wali queries ke liye raw SQL	
+Realtime	Socket.io	Admin ko new SOS turant dikhe, user ko ambulance status
+Queue	Postgres table (Redis/BullMQ skip karo)	Ek DB me sab kuch atomic rehta hai
+Auth	JWT + role middleware	roles: USER, AMBULANCE_ADMIN, HOSPITAL_STAFF, DRIVER, EVALUATOR
+File upload	Multer, local ya S3/Cloudinary	photo, video, audio
+LLM	Claude/Gemini API, backend se call	resource list banane ke liye
+ML forecaster	Chhoti Python FastAPI service (/predict)	Express me LightGBM nahi chalta. Stateless hai, to separate service safe hai
+Isse backend Node + ek chhoti Python ML service. Baaki sab ek hi Express app me.
+
+2. Folder structure
+backend/
+  src/
+    server.ts
+    config/            # env, db, socket
+    middleware/        # auth, rbac, idempotency, errorHandler
+    modules/
+      auth/            # signup, login, profile (emergency contact optional)
+      incidents/       # SOS create, describe, media, cancel
+      triage/          # LLM resource prediction
+      admin/           # approve/modify resources, dispatch
+      hospitals/       # hospital, units, occupancy, closures
+      reservations/    # state machine + locking
+      allocator/       # radius search, scoring, batch solve
+      replanner/       # rejection, resource loss, travel change
+      ambulances/      # fleet, location, assignment
+      transfers/       # movable resource sharing
+      forecast/        # client for Python service
+      queue/           # waiting queue + worker
+      sim/             # generator, replay, baseline
+      metrics/         # evaluator
+    sockets/
+    utils/
+  prisma/schema.prisma
+  ml-service/          # Python FastAPI
+  scripts/             # seed, replay, evaluate
+Har module me routes.ts, service.ts, repo.ts rakho. Business logic sirf service.ts me hoga, routes me nahi.
+
+3. Database tables
+users(id, name, phone, role, emergency_contact_name?, emergency_contact_phone?, created_at)
+   -- emergency contact nullable, kyunki skip allowed hai
+
+incidents(id, user_id, status, lat, lng, triage_level, description_text,
+          note, created_at, idempotency_key UNIQUE)
+incident_media(id, incident_id, type[photo|video|audio], url, transcript?)
+
+resource_types(id, code[ICU_BED, VENTILATOR, OXYGEN, TRAUMA_BAY, OT, GENERAL_BED],
+               is_movable, importance_rank)
+
+incident_resource_needs(id, incident_id, resource_type_id, qty,
+                        source[LLM|ADMIN_EDIT], approved_by, approved_at)
+
+hospitals(id, name, geom POINT, status[OPEN|CLOSED])
+resource_units(id, hospital_id, resource_type_id, label, status[FREE|OCCUPIED|FAULTY],
+               is_movable, updated_at)          -- ek row = ek physical unit
+hospital_snapshots(hospital_id, last_reported_at)   -- freshness check ke liye
+
+reservations(id, incident_id, unit_id, hospital_id, status, hold_expires_at,
+             idempotency_key, version, created_at)
+
+ambulances(id, driver_id, geom, status[AVAILABLE|ASSIGNED|EN_ROUTE|BUSY], updated_at)
+dispatches(id, incident_id, ambulance_id, hospital_id, eta_to_patient,
+           eta_to_hospital, status)
+
+dispatch_queue(id, incident_id, priority_score, enqueued_at, attempts, state)
+resource_transfers(id, from_hospital, to_hospital, unit_id, for_incident, status)
+
+events(id, entity_type, entity_id, event_type, payload JSONB, ts)   -- audit + replay log
+forecast_predictions(id, unit_type, hospital_id, eta, p_available, model_version, ts)
+scenario_runs(id, scenario, system[MINE|BASELINE], seed, metrics JSONB)
+Sabse important line (double-booking DB level par rokne ke liye):
+
+sql
+CREATE UNIQUE INDEX one_active_reservation_per_unit
+ON reservations(unit_id)
+WHERE status IN ('HELD','CONFIRMED','ARRIVED');
+Judges yehi dekhenge. App code me if check kaafi nahi hai, DB constraint hona chahiye.
+
+4. State machines
+Incident:
+
+SUBMITTED → AI_DRAFTED → ADMIN_APPROVED → SEARCHING → HELD
+ → AMBULANCE_ASSIGNED → EN_ROUTE → ARRIVED → HANDED_OVER
+Side states: QUEUED, UNSERVED (reason), ESCALATED, CANCELLED
+Reservation:
+
+PROPOSED → HELD → CONFIRMED (hospital accept) → ARRIVED → HANDED_OVER
+            ↘ REJECTED | EXPIRED | CANCELLED
+Transitions ek hi function se hon, jo allowed transitions ka table check kare aur har transition events table me likhe.
+
+5. Tumhare flow ko API me map karo
+Step	Endpoint	Kaun
+Signup/login	POST /auth/signup, /auth/login	user
+SOS press	POST /incidents (lat, lng, Idempotency-Key header)	user
+Describe	PATCH /incidents/:id/describe (text) + POST /incidents/:id/media (file)	user
+LLM draft	backend khud call karta hai describe ke baad, AI_DRAFTED	system
+Admin dekhe	GET /admin/incidents?status=AI_DRAFTED + socket event incident:new	admin
+Resource edit/approve	PUT /admin/incidents/:id/resources aur POST /admin/incidents/:id/approve	admin
+Search + lock	approve ke baad allocator.dispatch(incidentId)	system
+Hospital confirm	POST /hospital/reservations/:id/accept ya /reject	hospital
+Ambulance assign	auto, ya POST /admin/incidents/:id/dispatch	system/admin
+Live tracking	PATCH /ambulances/:id/location, socket ambulance:moved	driver
+Arrived/handover	POST /dispatches/:id/arrived, /handover	driver/hospital
+Cancel	POST /incidents/:id/cancel (hold release)	user/admin
+Status	GET /incidents/:id + socket incident:update	user
+Friend ko OpenAPI/Swagger (swagger-ui-express) de do, taaki frontend ka kaam parallel chale. Pehle API contract finalize karo, phir code.
+
+6. LLM wala part (Triage module)
+Input: text, speech ka transcript (speech-to-text ke liye Whisper ya Gemini audio), photo/video (vision model optional).
+Output strict JSON schema me: { triage_level, resources:[{code, qty, reason}], confidence, needs_clarification }.
+Code me validate karo (zod). Sirf wahi resource codes allowed jo resource_types me hain.
+LLM sirf draft deta hai. Admin approve karne ke baad hi allocator chalta hai. Ye PS ke “model supports, rules enforce” wale principle se match karta hai.
+Agar LLM fail ho, to rule-based fallback do (jaise “accident” → TRAUMA_BAY + OXYGEN), taaki demo na ruke.
+7. Allocator ka core flow (tumhara radius logic)
+dispatch(incident):
+  radius = 5km
+  while radius <= MAX (e.g. 40km):
+      hospitals = PostGIS ST_DWithin(incident.geom, hospital.geom, radius) AND status=OPEN
+      feasible = filter hospitals jinke paas SAARE needed resources hain
+                 AND data fresh (last_reported_at < 15 min)    # stale = unconfirmed
+      if feasible: break
+      radius += 5km
+  if feasible:
+      score each: urgency × P(available at ETA) − travel_penalty
+      for hospital in ranked:
+          try hold_units(hospital, needs)   # transaction, neeche dekho
+          if ok: assign_ambulance(); return
+  else:
+      try_transfer(incident)    # movable resource sharing
+      else mark UNSERVED with reason, ESCALATE
+Hold karne ka transaction (atomic):
+
+sql
+BEGIN;
+SELECT id FROM resource_units
+ WHERE hospital_id=$1 AND resource_type_id=$2 AND status='FREE'
+   AND id NOT IN (SELECT unit_id FROM reservations
+                  WHERE status IN ('HELD','CONFIRMED','ARRIVED'))
+ ORDER BY id LIMIT $3
+ FOR UPDATE SKIP LOCKED;
+-- in units ke liye reservations INSERT (hold_expires_at = now()+5min)
+COMMIT;
+FOR UPDATE SKIP LOCKED ki wajah se do requests ek hi bed ko nahi chhoo paati. Multi-resource request (ICU + ventilator) me sab ya kuch nahi rakho. Ek bhi fail ho to rollback.
+
+Hold expiry: ek cron/worker har 30 sec me HELD reservations jinki hold_expires_at nikal gayi, unhe EXPIRED karta hai aur unit free karta hai.
+
+Movable resource sharing (tumhara idea): jab koi hospital poora match nahi karta, lekin sirf ek is_movable resource (ventilator, oxygen cylinder) kam hai, to dusre hospital se resource_transfers request banao. Transfer approve hone tak wo unit dono jagah reserve na ho (ek hi unit_id, to double-count nahi hoga).
+
+8. Waiting queue (tumhara “do log same request kare” wala case)
+Capacity na ho ya conflict ho to incident dispatch_queue me jaata hai.
+priority_score = triage_weight*100 + wait_minutes*2 (aging, taaki low-triage wala hamesha na latke).
+Worker har 5-10 sec me queue ke sab incidents ko ek saath (batch) allocator ko deta hai, ek-ek karke nahi.
+9. Jo tumhare flow me abhi missing hai
+Gap 1: Batch allocation (Addition 1). Tumhara flow ek patient ko ek time par handle karta hai. PS me multiple patients ek saath allocate karna, aur rejection ya resource loss par replan karna mandatory hai. To allocator.solveBatch(patients[]) banao (priority-greedy with capacity checks, ya OR-Tools). Aur replanner me rule: already CONFIRMED handovers ko mat chhedo.
+
+Gap 2: Forecaster (Addition 2) aur evaluation. Tumhare flow me “availability check” sirf current capacity dekhta hai. Wahi baseline hai. Tumhe P(free at ETA) predict karke ranking me use karna hai, aur dono ko same replay par chalana hai. Iske liye:
+
+sim/generator.ts: seeded synthetic occupancy aur events.
+sim/replay.ts: deterministic scenario runner.
+sim/baseline.ts: current-capacity-only allocator.
+scripts/evaluate.ts: results table (handovers, failures, reroutes, delay, unserved).
+Ye teen cheezein nahi bani to model ka contribution judges ko dikhega hi nahi.
+
+Chhoti baatein: hospital data freshness (15 min rule) aur hospital ka accept/reject step tumne bola nahi, par PS me mandatory hai. Hold ke baad hospital staff ko confirm karna hi hoga.
+
+10. Tumhare liye build order (backend only)
+Setup: Express + TS + Prisma + Postgres/PostGIS, auth + RBAC middleware, Swagger.
+Schema + seed: 5 hospitals, units, ambulances, users (Pune ke coordinates).
+Reservation engine + unique index + concurrency test (50 parallel requests, sirf 1 jeete). Ye test demo me dikhana.
+Incident APIs (SOS, describe, media) + sockets.
+LLM triage + admin approve/edit.
+Radius search + single-patient dispatch (tumhara original flow end-to-end).
+Hospital accept/reject, expiry worker, cancel.
+Queue + batch allocator + replanner.
+Simulator + replay + baseline (ye dusre teammate ko bhi de sakte ho).
+Python forecaster integrate (/predict), ranking me plug.
+Evaluator script + metrics API.
+Pehle 7 steps me tumhara original wireframe kaam karne lagega. Step 8-11 final round ke additions hain, aur wahi score dilate hain.
+
+Teammate ko kya do
+Frontend (friend): OpenAPI spec, socket event list, test accounts (har role ka ek).
+ML: koi teammate Python forecaster aur synthetic data generator le sakta hai. Tum sirf /predict ka contract do: {hospital_id, resource_type, eta_minutes, features} → {p_available, model_version}.
+Agar chaho to agla main ye de sakta hoon: (a) poora Prisma schema, (b) holdUnits ka working TypeScript code (transaction + idempotency), ya (c) API endpoints ka detailed request/response contract jo tum friend ko bhej sako. Batao kaunsa pehle chahiye.
+
+can i use postgress/SQL through cloud/api not by locally storugn in my machine , so while deploment it will be quiete doable , smilir to how we use mongodb ats through mongo db uri ?
+
+Cloud Postgres options jaise MongoDB Atlas explore kiye ja rahe hain.
+Cloud Postgres options jaise MongoDB Atlas explore kiye ja rahe hain.
+Haan, bilkul. Postgres cloud par MongoDB Atlas jaisa hi chalta hai
+Ek connection string (DATABASE_URL) milti hai, aur wahi Prisma ya pg me daalni hoti hai.
+
+env
+DATABASE_URL="postgresql://user:password@host:5432/dbname?sslmode=require"
+Cloud Postgres options
+Service	Free tier	PostGIS	Note
+Neon	Haan	Haan (CREATE EXTENSION postgis;)	Serverless, branching. Free me idle hone par DB sleep ho jata hai, to pehli query slow ho sakti hai
+Supabase	Haan	Haan (Dashboard me extension enable)	Normal Postgres hai, free tier me inactivity par pause ho sakta hai
+Railway / Render	Limited/trial	Template ya Docker se	Backend aur DB ek hi jagah deploy ho sakte hain
+AWS RDS / Aiven	Trial	Haan	Zyada setup, hackathon ke liye overkill
+Meri suggestion: Neon ya Supabase lo, aur backend Render/Railway par deploy karo. Dono me PostGIS chalta hai, to radius search (ST_DWithin) aur FOR UPDATE SKIP LOCKED wala locking logic same rehta hai.
+
+Dhyan rakhne wali baatein
+Supabase ko sirf Postgres ki tarah use karo. Uski REST/JS client API se mat chalao, kyunki transaction aur row locking ke liye tumhe direct SQL connection chahiye. Tum Express se Prisma ya pg ke through connect karoge, to ye problem nahi aayegi.
+Connection pooling: Cloud DB me pooled aur direct, do URL milte hain. Runtime ke liye pooled URL aur Prisma migrations ke liye direct URL use karo:
+prisma
+   datasource db {
+     provider  = "postgresql"
+     url       = env("DATABASE_URL")   // pooled
+     directUrl = env("DIRECT_URL")     // migrations
+   }
+Transactions (BEGIN ... FOR UPDATE SKIP LOCKED ... COMMIT) pooled URL par bhi chalte hain, bas ek transaction ke andar ke saare queries ek hi connection par chalne chahiye. Prisma ka $transaction ye sambhal leta hai.
+
+Demo se pehle DB ko warm kar lo. Free tier par sleep/pause hone se live demo me pehla request slow ya fail ho sakta hai. Demo se 10 minute pehle ek health-check query maar do.
+Region: Jo region India ke sabse paas ho wahi choose karo (Mumbai ya Singapore), warna har query me latency badhegi aur locking test slow dikhega.
+Concurrency test cloud par bhi chalao. 50 parallel requests wala test deployed DB par ek baar zaroor run karo, kyunki network latency ke saath race conditions alag dikh sakti hain.
+Secrets: DATABASE_URL ko .env me rakho, aur .env ko .gitignore me daalo. Repo public hai to password leak ho jayega. Deploy par platform ke environment variables me set karo.
+Practical setup
+Development: Local Docker Postgres (postgis/postgis image) ya seedha cloud DB. Dono chalte hain.
+Team sharing: Ek shared Neon/Supabase DB sab ke liye, ya har developer ki alag Neon branch (testing me data na bigde).
+Deployment: Backend Render/Railway par, DB Neon/Supabase par, aur sirf DATABASE_URL env variable set karna hai.
+Agle step me main tumhe poora Prisma schema (PostGIS, partial unique index aur migration ke saath) ya holdUnits ka working transaction code de sakta hoon. Batao kaunsa chahiye.
+
+okk koi bhi chlega , bas free ho and doable ho use karne me , complexity kam ho
+
+Recommendation: Neon lo. Simple aur free
+Teeno me se agar complexity sabse kam chahiye, to Neon.
+
+Neon kyun?
+Signup karo (GitHub se ho jata hai), “Create project” dabao, region Singapore ya Mumbai (jo available ho) choose karo. 1 minute me DB ready.
+Connection string copy karo, .env me daalo. Bas.
+PostGIS ek line me on hota hai: CREATE EXTENSION postgis; (Neon ke SQL Editor me chala do)
+Free tier hackathon ke liye kaafi hai.
+Credit card nahi maangta.
+Supabase bhi chalega, par usme dashboard me bahut extra cheezein (auth, storage, REST API) dikhti hain jo tumhe nahi chahiye. Neon me sirf database hai, to confusion kam.
+
+Setup (10 minute ka kaam)
+1. Neon par project banao, aur dashboard se 2 connection strings copy karo:
+
+Pooled (host me -pooler hota hai) → runtime ke liye
+Direct (bina pooler) → migrations ke liye
+2. .env file:
+
+env
+DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+DIRECT_URL="postgresql://user:pass@ep-xxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+3. PostGIS enable karo (Neon SQL Editor me):
+
+sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+4. Prisma install aur connect:
+
+bash
+npm i prisma @prisma/client
+npx prisma init
+schema.prisma me url aur directUrl daalo (pichhle message jaisa), phir:
+
+bash
+npx prisma migrate dev --name init
+5. Test karo: ek chhoti script me SELECT 1 chala ke dekho connection chal raha hai.
+
+Complexity kam rakhne ke 3 tips
+Sirf ek DB use karo, sab ke liye wahi (dev + demo). Branching, multiple environments ke chakkar me mat pado.
+Prisma me PostGIS ka type seedha supported nahi hai. Isliye lat aur lng ko normal Float columns me rakho, aur radius search ke liye raw SQL likho:
+sql
+   SELECT * FROM hospitals
+   WHERE ST_DWithin(
+     ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography,
+     ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+     $3
+   );
+Isse schema simple rehta hai aur radius search phir bhi kaam karta hai. Aur agar PostGIS ka jhanjhat bhi nahi chahiye, to Haversine formula se bhi distance nikal sakte ho, 5-6 hospitals ke liye wahi kaafi hai. Tab extension ki bhi zarurat nahi.
+3. Partial unique index Prisma schema me nahi likh sakte, wo migration ke SQL file me manually add karna padega:
+
+bash
+   npx prisma migrate dev --create-only --name add_unique_index
+Phir generated .sql file khol ke ye line daal do aur npx prisma migrate dev chalao:
+
+sql
+   CREATE UNIQUE INDEX one_active_reservation_per_unit
+   ON reservations(unit_id)
+   WHERE status IN ('HELD','CONFIRMED','ARRIVED');
+Deployment
+Backend: Render (free web service) par deploy karo. Bas GitHub repo connect karo aur environment variables me DATABASE_URL daalo.
+Dhyan: Render free tier par service 15 min inactivity ke baad sleep ho jati hai, aur Neon bhi idle me sleep karta hai. Demo se 10 minute pehle dono ko ek request maar ke jaga do.
+Final stack (simple version)
+Cheez	Choice
+Database	Neon (Postgres)
+ORM	Prisma + raw SQL locking queries ke liye
+Backend host	Render
+Frontend host	Vercel (friend ka Next.js)
+Ye sab free hai aur teeno ke setup me ek-ek ghanta bhi nahi lagega.
+
+Ab agla step: main tumhe poora Prisma schema (saari tables, enums, relations) de deta hoon, jise copy karke tum seedha migrate dev chala sako. Chahiye?
+
+
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Content
+1789717974529-72e6a9a6cee6-0ba8c28d-03e3-4d99-aa2d-aebb7c05f852.pdf
+HackMatrix_Final_Round_Additons.pdf
+Claude finished the response

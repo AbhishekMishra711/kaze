@@ -1,0 +1,104 @@
+================================================================================
+HLTH-02 EMERGENCY RESOURCE ALLOCATOR - COMPLETE API ENDPOINT DIRECTORY
+================================================================================
+Backend Base URL : http://localhost:4000
+ML Service URL   : http://localhost:8000
+WebSocket URL    : ws://localhost:4000
+
+--------------------------------------------------------------------------------
+1. CITIZEN / CALLER (Emergency SOS App)
+--------------------------------------------------------------------------------
+POST  /api/v1/incidents/sos
+      Trigger SOS emergency. Takes GPS (lat/lng) & incident description.
+      Runs Claude Haiku clinical triage and queues for hospital allocation.
+
+GET   /api/v1/incidents/:id
+      Live incident tracking. Returns current status, assigned hospital,
+      ambulance vehicle number, and 5-minute reservation hold timer.
+
+
+--------------------------------------------------------------------------------
+2. EMERGENCY DISPATCHER (Central Command Hub)
+--------------------------------------------------------------------------------
+GET   /api/v1/dispatcher/active-incidents
+      Active Queue: View all incoming emergency cases waiting for beds
+      ordered by clinical urgency (Resuscitation first).
+
+POST  /api/v1/dispatcher/solve-batch
+      AI Batch Optimizer: Matches multiple competing patients simultaneously
+      to optimal hospitals based on ETA, capacity, and P(available at ETA).
+
+GET   /api/v1/dispatcher/hospitals
+      Hospital Network: Live bed/ICU/ventilator capacity across all 6 hospitals.
+      Automatically flags stale hospitals (no heartbeat in >15 mins).
+
+GET   /api/v1/dispatcher/ambulances
+      Fleet Telemetry: Real-time GPS coordinates and statuses of all ambulances.
+
+
+--------------------------------------------------------------------------------
+3. HOSPITAL ER STAFF / DOCTORS (Hospital Reception & Capacity Terminal)
+--------------------------------------------------------------------------------
+GET   /api/v1/hospitals/:id/reservations
+      Inbound Patients: View incoming ambulances, patient clinical triage,
+      assigned unit labels, and hold expiration timers.
+
+POST  /api/v1/hospitals/reservations/:resId/accept
+      1-Click Accept: Doctor confirms the incoming bed reservation.
+
+POST  /api/v1/hospitals/reservations/:resId/reject
+      Reject & Reroute: Rejects reservation; backend instantly reroutes
+      the in-transit patient to the secondary best hospital in <1 second!
+
+POST  /api/v1/hospitals/reservations/:resId/handover
+      Complete Handover: Patient admitted to bed; frees ambulance back to pool.
+
+PATCH /api/v1/hospitals/:id/status
+      Hospital Shutdown / Re-open: Temporarily closes hospital (e.g. power cut).
+      Automatically reroutes all inbound ambulances to other hospitals!
+
+POST  /api/v1/hospitals/:id/resources
+      Add Units: Adds new physical units (e.g. +2 Ventilators, +1 ICU Bed).
+
+PATCH /api/v1/hospitals/:id/resources/adjust
+      Quick Capacity Delta: Increment (+1) or decrement (-1) available beds.
+
+POST  /api/v1/hospitals/:id/heartbeat
+      Heartbeat Refresh: Updates hospital report time and clears 15-min staleness.
+
+
+--------------------------------------------------------------------------------
+4. AMBULANCE PARAMEDIC / DRIVER (Driver Navigation Tablet)
+--------------------------------------------------------------------------------
+PATCH /api/v1/ambulances/:id/location
+      GPS Ping: Updates driver's live latitude and longitude coordinates.
+
+POST  /api/v1/ambulances/:id/status
+      Trip State: Updates status (DISPATCHED -> EN_ROUTE -> ARRIVED).
+
+
+--------------------------------------------------------------------------------
+5. AI / MACHINE LEARNING SERVICE (Decision Intelligence Engine)
+--------------------------------------------------------------------------------
+POST  http://localhost:8000/predict
+      XAI Forecaster: Calculates calibrated P(available at ETA) with Explainable
+      AI (XAI) feature attributions showing why the score was given.
+
+GET   http://localhost:8000/health
+      ML Service Health: Confirms model pipeline artifact is loaded in memory.
+
+
+--------------------------------------------------------------------------------
+6. JUDGES & EVALUATION (Benchmark & Verification Proofs)
+--------------------------------------------------------------------------------
+GET   /api/v1/evaluator/benchmark
+      Proof Scorecard: Live comparative table between Naive Baseline and
+      Proposed Smart Engine (Success rate, Reroutes, Double-booking collisions).
+
+Terminal Scripts:
+npm run test:concurrency
+      50-Thread Race Attack: Proves zero double-booking under extreme concurrency.
+
+npm run test:benchmark
+      Scenario Replay: Automatically replays all 5 hackathon challenge scenarios.
+================================================================================
