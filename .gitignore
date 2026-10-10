@@ -23,6 +23,10 @@ ml-service/*.joblib
 dist/
 backend/dist/
 build/
+.next/
+**/.next/
+.expo/
+**/.expo/
 *.log
 
 # System & IDE

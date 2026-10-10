@@ -34,6 +34,8 @@ export async function seedData() {
   const hospitalsData = [
     {
       name: 'Aditya Birla Memorial Hospital (Thergaon)',
+      adminId: 'aditya_birla@admin',
+      password: 'password123',
       lat: 18.6186,
       lng: 73.7744,
       phone: '020-30717500',
@@ -41,6 +43,8 @@ export async function seedData() {
     },
     {
       name: 'Dr. D.Y. Patil Medical College Hospital (Pimpri)',
+      adminId: 'dy_patil@admin',
+      password: 'password123',
       lat: 18.6253,
       lng: 73.8166,
       phone: '020-27805100',
@@ -48,6 +52,8 @@ export async function seedData() {
     },
     {
       name: 'YCM Hospital (Pimpri Chinchwad)',
+      adminId: 'ycm@admin',
+      password: 'password123',
       lat: 18.6282,
       lng: 73.8198,
       phone: '020-27420101',
@@ -55,6 +61,8 @@ export async function seedData() {
     },
     {
       name: 'Manipal Hospital (Baner)',
+      adminId: 'manipal@admin',
+      password: 'password123',
       lat: 18.5635,
       lng: 73.7788,
       phone: '020-68138888',
@@ -62,6 +70,8 @@ export async function seedData() {
     },
     {
       name: 'Ruby Hall Clinic (Pune Station)',
+      adminId: 'ruby_hall@admin',
+      password: 'password123',
       lat: 18.5326,
       lng: 73.8798,
       phone: '020-66455100',
@@ -69,6 +79,8 @@ export async function seedData() {
     },
     {
       name: 'Sassoon General Hospital (Govt Tertiary)',
+      adminId: 'sassoon@admin',
+      password: 'password123',
       lat: 18.5262,
       lng: 73.8741,
       phone: '020-26128000',
@@ -82,9 +94,9 @@ export async function seedData() {
       : new Date(Date.now() - 2 * 60 * 1000).toISOString();
 
     const hRes = await db.query(
-      `INSERT INTO hospitals (name, latitude, longitude, contact_phone, last_reported_at) 
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [h.name, h.lat, h.lng, h.phone, reportTime]
+      `INSERT INTO hospitals (name, admin_id, password, latitude, longitude, contact_phone, last_reported_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [h.name, h.adminId, h.password, h.lat, h.lng, h.phone, reportTime]
     );
     const hospitalId = hRes.rows[0].id;
 
@@ -111,19 +123,19 @@ export async function seedData() {
 
   // 4. Seed Ambulance Fleet
   const fleet = [
-    { vehicle: 'MH-14-EM-1081', lat: 18.6275, lng: 73.8180 }, // Near PCCOE / Akurdi
-    { vehicle: 'MH-14-EM-1082', lat: 18.5950, lng: 73.7650 }, // Hinjawadi Phase 1
-    { vehicle: 'MH-14-EM-1083', lat: 18.5550, lng: 73.8050 }, // Aundh / Baner
-    { vehicle: 'MH-14-EM-1084', lat: 18.5300, lng: 73.8450 }, // Shivajinagar
-    { vehicle: 'MH-14-EM-1085', lat: 18.6350, lng: 73.7950 }, // Chinchwad Station
-    { vehicle: 'MH-14-EM-1086', lat: 18.5080, lng: 73.8600 }  // Swargate
+    { vehicle: 'MH-14-EM-1081', lat: 18.6275, lng: 73.8180, driverName: 'Rajesh Patil', phone: '+91 9823011081' }, // Near PCCOE / Akurdi
+    { vehicle: 'MH-14-EM-1082', lat: 18.5950, lng: 73.7650, driverName: 'Sanjay More', phone: '+91 9823011082' }, // Hinjawadi Phase 1
+    { vehicle: 'MH-14-EM-1083', lat: 18.5550, lng: 73.8050, driverName: 'Amit Shinde', phone: '+91 9823011083' }, // Aundh / Baner
+    { vehicle: 'MH-14-EM-1084', lat: 18.5300, lng: 73.8450, driverName: 'Ganesh Kadam', phone: '+91 9823011084' }, // Shivajinagar
+    { vehicle: 'MH-14-EM-1085', lat: 18.6350, lng: 73.7950, driverName: 'Vikas Jadhav', phone: '+91 9823011085' }, // Chinchwad Station
+    { vehicle: 'MH-14-EM-1086', lat: 18.5080, lng: 73.8600, driverName: 'Nitin Pawar', phone: '+91 9823011086' }  // Swargate
   ];
 
   for (const amb of fleet) {
     await db.query(
-      `INSERT INTO ambulances (vehicle_number, current_lat, current_lng, status) 
-       VALUES ($1, $2, $3, 'AVAILABLE')`,
-      [amb.vehicle, amb.lat, amb.lng]
+      `INSERT INTO ambulances (vehicle_number, current_lat, current_lng, status, driver_name, driver_phone) 
+       VALUES ($1, $2, $3, 'AVAILABLE', $4, $5)`,
+      [amb.vehicle, amb.lat, amb.lng, amb.driverName, amb.phone]
     );
   }
 

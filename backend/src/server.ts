@@ -10,6 +10,9 @@ import { BatchAllocatorService } from './modules/allocator/batchAllocator.js';
 import { DynamicReplannerService } from './modules/replanner/replannerService.js';
 import { ReservationService } from './modules/reservations/reservationService.js';
 import { FreshnessService } from './modules/allocator/freshnessService.js';
+import { GeoUtils } from './modules/allocator/geoUtils.js';
+import { ForecasterClient } from './modules/forecaster/forecasterClient.js';
+import { ResourceCategory } from './types/index.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -41,6 +44,115 @@ setInterval(async () => {
 // =================================================================
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'hlth02-backend', time: new Date().toISOString() });
+});
+
+// =================================================================
+// 1.5 AUTHENTICATION & REGISTRATION ROUTES
+// =================================================================
+app.post('/api/v1/auth/hospital/register', async (req, res) => {
+  try {
+    const { name, admin_id, password, latitude, longitude, contact_phone } = req.body;
+    if (!name || !admin_id || !password) {
+      return res.status(400).json({ success: false, error: 'Hospital name, admin ID, and password are required' });
+    }
+
+    const lat = parseFloat(latitude) || 18.625;
+    const lng = parseFloat(longitude) || 73.815;
+
+    // Check duplicate admin_id
+    const existing = await db.query(`SELECT id FROM hospitals WHERE admin_id = $1`, [admin_id]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ success: false, error: 'Admin ID already registered. Please choose another.' });
+    }
+
+    const insertHosp = await db.query(
+      `INSERT INTO hospitals (name, admin_id, password, latitude, longitude, contact_phone, is_active, last_reported_at)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
+       RETURNING id, name, admin_id, latitude, longitude, contact_phone, is_active, last_reported_at`,
+      [name, admin_id, password, lat, lng, contact_phone || '020-00000000']
+    );
+
+    const hospital = insertHosp.rows[0];
+
+    // Seed default baseline emergency resources for the new hospital
+    const defaultUnits = [
+      { category: 'ICU_BED', count: 4 },
+      { category: 'VENTILATOR', count: 3 },
+      { category: 'TRAUMA_BAY', count: 2 },
+      { category: 'OXYGEN_BED', count: 6 },
+      { category: 'PEDIATRIC_ICU', count: 1 },
+      { category: 'GENERAL_BED', count: 8 }
+    ];
+
+    for (const unit of defaultUnits) {
+      for (let i = 1; i <= unit.count; i++) {
+        await db.query(
+          `INSERT INTO resource_units (hospital_id, category, unit_label, status, is_movable)
+           VALUES ($1, $2, $3, 'FREE', $4)`,
+          [hospital.id, unit.category, `${unit.category}-${i.toString().padStart(2, '0')}`, unit.category === 'VENTILATOR']
+        );
+      }
+    }
+
+    io.emit('hospital:registered', { id: hospital.id, name: hospital.name });
+
+    res.status(201).json({
+      success: true,
+      message: 'Hospital registered successfully',
+      hospital
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/auth/hospital/login', async (req, res) => {
+  try {
+    const { admin_id, password } = req.body;
+    if (!admin_id || !password) {
+      return res.status(400).json({ success: false, error: 'Admin ID and password are required' });
+    }
+
+    const hospRes = await db.query(
+      `SELECT id, name, admin_id, password, latitude, longitude, contact_phone, is_active, last_reported_at
+       FROM hospitals WHERE admin_id = $1`,
+      [admin_id]
+    );
+
+    if (hospRes.rows.length === 0) {
+      return res.status(401).json({ success: false, error: 'Hospital not found with this Admin ID' });
+    }
+
+    const hospital = hospRes.rows[0];
+    if (hospital.password !== password) {
+      return res.status(401).json({ success: false, error: 'Invalid password' });
+    }
+
+    const { password: _, ...hospData } = hospital;
+    res.json({
+      success: true,
+      hospital: hospData,
+      token: `hosp-token-${hospital.id}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/auth/ambulance/login', async (req, res) => {
+  try {
+    const { admin_id, password } = req.body;
+    if (admin_id === 'admin' && password === 'admin') {
+      return res.json({
+        success: true,
+        user: { role: 'AMBULANCE_ADMIN', username: 'admin', name: 'Pune Central Dispatch Admin' },
+        token: 'ambulance-admin-token-108'
+      });
+    }
+    return res.status(401).json({ success: false, error: 'Invalid credentials. Use admin / admin' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // =================================================================
@@ -76,7 +188,9 @@ app.get('/api/v1/incidents/:id', async (req, res) => {
 
     // Attach active reservation details if any
     const resRow = await db.query(
-      `SELECT r.*, h.name as hospital_name, a.vehicle_number 
+      `SELECT r.*, h.name as hospital_name, h.latitude as hospital_lat, h.longitude as hospital_lng,
+              h.contact_phone as hospital_phone,
+              a.vehicle_number, a.driver_name, a.driver_phone
        FROM reservations r
        JOIN hospitals h ON r.hospital_id = h.id
        LEFT JOIN ambulances a ON r.ambulance_id = a.id
@@ -163,14 +277,268 @@ app.get('/api/v1/dispatcher/ambulances', async (req, res) => {
   }
 });
 
+// 3.4 Get ML & Proximity Recommendations for an Incident
+app.get('/api/v1/dispatcher/incidents/:id/recommendations', async (req, res) => {
+  try {
+    const incident = await IncidentService.getIncidentById(req.params.id);
+    if (!incident) return res.status(404).json({ success: false, error: 'Incident not found' });
+
+    const requirements = incident.requirements || [
+      { category: 'GENERAL_BED', quantity_needed: 1 }
+    ];
+
+    const hospRes = await db.query(`SELECT * FROM hospitals WHERE is_active = TRUE ORDER BY name ASC`);
+    const hospitals = hospRes.rows;
+
+    const candidates = [];
+    const primaryCat = (requirements[0]?.category || 'GENERAL_BED') as ResourceCategory;
+
+    for (const h of hospitals) {
+      const distKm = GeoUtils.haversineDistanceKm(incident.latitude, incident.longitude, h.latitude, h.longitude);
+      const travelMinutes = GeoUtils.estimateTravelMinutes(distKm);
+      const freshness = FreshnessService.evaluateHospital(h.last_reported_at);
+
+      // Check available units
+      const countRes = await db.query(
+        `SELECT COUNT(*) as free_count 
+         FROM resource_units u
+         WHERE u.hospital_id = $1 
+           AND u.category = $2 
+           AND u.status = 'FREE'
+           AND u.id NOT IN (
+             SELECT unit_id FROM reservations WHERE status IN ('HELD', 'CONFIRMED', 'ARRIVED')
+           )`,
+        [h.id, primaryCat]
+      );
+      const freeCount = parseInt(countRes.rows[0].free_count, 10);
+
+      // Total capacity summary
+      const allCapRes = await db.query(
+        `SELECT category, COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'FREE') as free
+         FROM resource_units WHERE hospital_id = $1 GROUP BY category`,
+        [h.id]
+      );
+
+      // Forecast P(available at ETA)
+      const pred = await ForecasterClient.predictAvailability({
+        hospitalId: h.id,
+        category: primaryCat,
+        currentFreeCount: freeCount,
+        etaMinutes: travelMinutes
+      });
+
+      const urgencyWeight = (BatchAllocatorService as any).TRIAGE_WEIGHTS?.[incident.triage_level] || 50;
+      const compositeScore = parseFloat(((urgencyWeight * pred.pAvailable) - (0.6 * travelMinutes) - freshness.penaltyScore).toFixed(2));
+
+      candidates.push({
+        hospitalId: h.id,
+        name: h.name,
+        contactPhone: h.contact_phone,
+        latitude: h.latitude,
+        longitude: h.longitude,
+        distanceKm: parseFloat(distKm.toFixed(2)),
+        travelMinutes,
+        freePrimaryCount: freeCount,
+        primaryCategory: primaryCat,
+        pAvailable: pred.pAvailable,
+        pAvailablePercent: Math.round(pred.pAvailable * 100),
+        isStale: freshness.isStale,
+        minutesSinceReport: freshness.minutesSinceReport,
+        stalenessPenalty: freshness.penaltyScore,
+        compositeScore,
+        capacitySummary: allCapRes.rows
+      });
+    }
+
+    candidates.sort((a, b) => b.compositeScore - a.compositeScore);
+
+    res.json({
+      success: true,
+      incident,
+      recommendations: candidates
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.5 Dispatcher requests bed at specific hospital
+app.post('/api/v1/dispatcher/incidents/:id/request-hospital', async (req, res) => {
+  try {
+    const { hospitalId, ambulanceId } = req.body;
+    const incident = await IncidentService.getIncidentById(req.params.id);
+    if (!incident) return res.status(404).json({ success: false, error: 'Incident not found' });
+
+    const requirements = (incident.requirements && incident.requirements.length > 0)
+      ? incident.requirements.map(r => ({ category: r.category as ResourceCategory, quantity: r.quantity_needed }))
+      : [{ category: 'GENERAL_BED' as ResourceCategory, quantity: 1 }];
+
+    // Find available ambulance if none specified
+    let ambId = ambulanceId;
+    if (!ambId) {
+      const ambRes = await db.query(`SELECT id FROM ambulances WHERE status = 'AVAILABLE' LIMIT 1`);
+      if (ambRes.rows.length > 0) ambId = ambRes.rows[0].id;
+    }
+
+    const holdRes = await ReservationService.holdUnitsAtomically(
+      incident.id,
+      hospitalId,
+      requirements,
+      600, // 10-minute hold TTL
+      ambId
+    );
+
+    if (!holdRes.success) {
+      return res.status(400).json({
+        success: false,
+        error: `Could not hold resources at hospital: ${holdRes.error || 'Capacity unavailable'}`
+      });
+    }
+
+    await db.query(
+      `UPDATE incidents SET status = 'ALLOCATING', updated_at = NOW() WHERE id = $1`,
+      [incident.id]
+    );
+
+    // Fetch hospital info
+    const hospRes = await db.query(`SELECT name FROM hospitals WHERE id = $1`, [hospitalId]);
+    const hospitalName = hospRes.rows[0]?.name || 'Hospital';
+
+    const payload = {
+      incidentId: incident.id,
+      hospitalId,
+      hospitalName,
+      ambulanceId: ambId,
+      reservationIds: holdRes.reservationIds,
+      unitIds: holdRes.unitIds,
+      incident
+    };
+
+    // Emit to hospital admin live
+    io.emit('hospital:incoming_request', payload);
+    io.emit('reservation:created', payload);
+    io.emit('incident:updated', { incidentId: incident.id, status: 'ALLOCATING', hospitalName });
+
+    res.json({
+      success: true,
+      message: `Reservation request sent to ${hospitalName}`,
+      reservationIds: holdRes.reservationIds,
+      ambulanceId: ambId
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.6 Dispatcher Dispatches Ambulance
+app.post('/api/v1/dispatcher/incidents/:id/dispatch-ambulance', async (req, res) => {
+  try {
+    const { ambulanceId, driverName, driverPhone } = req.body;
+    let ambId = ambulanceId;
+
+    if (ambId) {
+      if (driverName || driverPhone) {
+        await db.query(
+          `UPDATE ambulances 
+           SET status = 'DISPATCHED', 
+               driver_name = COALESCE($1, driver_name), 
+               driver_phone = COALESCE($2, driver_phone), 
+               updated_at = NOW() 
+           WHERE id = $3`,
+          [driverName, driverPhone, ambId]
+        );
+      } else {
+        await db.query(`UPDATE ambulances SET status = 'DISPATCHED', updated_at = NOW() WHERE id = $1`, [ambId]);
+      }
+    }
+
+    await db.query(
+      `UPDATE incidents SET status = 'EN_ROUTE', updated_at = NOW() WHERE id = $1`,
+      [req.params.id]
+    );
+
+    const ambData = ambId ? (await db.query(`SELECT * FROM ambulances WHERE id = $1`, [ambId])).rows[0] : null;
+
+    io.emit('ambulance:dispatched', {
+      incidentId: req.params.id,
+      ambulance: ambData
+    });
+
+    io.emit('incident:updated', {
+      incidentId: req.params.id,
+      status: 'EN_ROUTE',
+      ambulance: ambData
+    });
+
+    res.json({
+      success: true,
+      message: 'Ambulance dispatched to emergency location',
+      ambulance: ambData
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // =================================================================
 // 4. HOSPITAL ER ROUTES
 // =================================================================
+app.get('/api/v1/hospitals/:id', async (req, res) => {
+  try {
+    const hospRes = await db.query(`SELECT * FROM hospitals WHERE id = $1`, [req.params.id]);
+    if (hospRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Hospital not found' });
+
+    const h = hospRes.rows[0];
+    const freshness = FreshnessService.evaluateHospital(h.last_reported_at);
+
+    const capRes = await db.query(
+      `SELECT category, 
+              COUNT(*) as total, 
+              COUNT(*) FILTER (WHERE status = 'FREE') as free,
+              COUNT(*) FILTER (WHERE status = 'OCCUPIED') as occupied,
+              COUNT(*) FILTER (WHERE status = 'MAINTENANCE') as maintenance
+       FROM resource_units 
+       WHERE hospital_id = $1 
+       GROUP BY category`,
+      [h.id]
+    );
+
+    const { password: _, ...cleanHosp } = h;
+    res.json({
+      success: true,
+      hospital: {
+        ...cleanHosp,
+        isStale: freshness.isStale,
+        minutesSinceReport: freshness.minutesSinceReport,
+        stalenessPenalty: freshness.penaltyScore,
+        capacity: capRes.rows
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/hospitals/:id/resources', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, category, unit_label, status, is_movable, updated_at
+       FROM resource_units
+       WHERE hospital_id = $1
+       ORDER BY category ASC, unit_label ASC`,
+      [req.params.id]
+    );
+    res.json({ success: true, resources: result.rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/v1/hospitals/:id/reservations', async (req, res) => {
   try {
     const result = await db.query(
       `SELECT r.*, i.triage_level, i.description_raw, i.latitude as inc_lat, i.longitude as inc_lng,
-              u.category as unit_category, u.unit_label, a.vehicle_number
+              u.category as unit_category, u.unit_label, a.vehicle_number, a.driver_name, a.driver_phone
        FROM reservations r
        JOIN incidents i ON r.incident_id = i.id
        JOIN resource_units u ON r.unit_id = u.id
@@ -190,8 +558,25 @@ app.post('/api/v1/hospitals/reservations/:id/accept', async (req, res) => {
     const ok = await ReservationService.confirmReservation(req.params.id);
     if (!ok) return res.status(400).json({ success: false, error: 'Could not confirm reservation' });
 
-    io.emit('reservation:confirmed', { reservationId: req.params.id });
-    res.json({ success: true, message: 'Reservation confirmed by hospital ER' });
+    // Fetch reservation details to broadcast
+    const resRow = await db.query(
+      `SELECT r.*, h.name as hospital_name, a.vehicle_number, a.driver_name, a.driver_phone
+       FROM reservations r
+       JOIN hospitals h ON r.hospital_id = h.id
+       LEFT JOIN ambulances a ON r.ambulance_id = a.id
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+    const reservation = resRow.rows[0];
+
+    if (reservation?.incident_id) {
+      await db.query(`UPDATE incidents SET status = 'RESERVED', updated_at = NOW() WHERE id = $1`, [reservation.incident_id]);
+    }
+
+    io.emit('reservation:confirmed', { reservationId: req.params.id, reservation });
+    io.emit('incident:updated', { incidentId: reservation?.incident_id, status: 'RESERVED', reservation });
+
+    res.json({ success: true, message: 'Reservation confirmed by hospital ER', reservation });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -23,8 +23,13 @@ export async function runMigrations() {
       is_active BOOLEAN DEFAULT TRUE,
       last_reported_at TIMESTAMPTZ DEFAULT NOW(),
       contact_phone VARCHAR(20),
+      admin_id VARCHAR(100) UNIQUE,
+      password VARCHAR(100),
       created_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+
+    `ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS admin_id VARCHAR(100) UNIQUE;`,
+    `ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS password VARCHAR(100);`,
 
     // 3. Discrete Resource Units Table
     `CREATE TABLE IF NOT EXISTS resource_units (
@@ -72,11 +77,16 @@ export async function runMigrations() {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       vehicle_number VARCHAR(30) UNIQUE NOT NULL,
       driver_id UUID REFERENCES users(id),
+      driver_name VARCHAR(100) DEFAULT 'Rajesh Kumar (Driver)',
+      driver_phone VARCHAR(30) DEFAULT '+91 9800000004',
       current_lat DOUBLE PRECISION NOT NULL,
       current_lng DOUBLE PRECISION NOT NULL,
       status VARCHAR(30) DEFAULT 'AVAILABLE',
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+
+    `ALTER TABLE ambulances ADD COLUMN IF NOT EXISTS driver_name VARCHAR(100) DEFAULT 'Rajesh Kumar (Driver)';`,
+    `ALTER TABLE ambulances ADD COLUMN IF NOT EXISTS driver_phone VARCHAR(30) DEFAULT '+91 9800000004';`,
 
     // 7. Reservations Table
     `CREATE TABLE IF NOT EXISTS reservations (

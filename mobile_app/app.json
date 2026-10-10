@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Kaze",
+    "slug": "kaze_ui_app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F2F2F2",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.kaze.sos",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Kaze needs your location to send emergency coordinates with your SOS request.",
+        "NSMicrophoneUsageDescription": "Kaze uses the microphone so you can describe your emergency by voice."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F2F2F2",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "RECORD_AUDIO"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-location",
+      "expo-av"
+    ]
+  }
+}
